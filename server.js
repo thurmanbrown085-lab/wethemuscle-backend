@@ -1,32 +1,3 @@
-require('dotenv').config();
-const express = require('express');
-const app = express();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const { Pool } = require('pg');
-const nodemailer = require('nodemailer');
-
-// 1. Initialize secure production database pool for Neon
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 2,                        // 💡 OPTIMIZATION: Limits total open database sockets
-  idleTimeoutMillis: 5000,       // 💡 OPTIMIZATION: Safely cuts inactive links to save container memory
-  connectionTimeoutMillis: 2000, // 💡 OPTIMIZATION: Prevents server loop stalls during long handshakes
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-// 2. Transporter for automated Outlook settlement telemetry
-const mailTransporter = nodemailer.createTransport({
-  host: '://office365.com', 
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.OUTLOOK_EMAIL,
-    pass: process.env.OUTLOOK_PASSWORD
-  }
-});
-
 // 3. STRIPE WEBHOOK ROUTE (Handles raw data stream for Settlements & Reconciliations)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -40,27 +11,37 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   }
 
   const eventType = event.type;
+  const dataObject = event.data.object;
 
-  // Track relevant settlement, reconciliation, and compliance events
-  if (
-    eventType === 'credit_note.created' ||                      
-    eventType === 'customer.balance_transaction.created' ||     
-    eventType === 'checkout.session.completed' ||
-    eventType === 'billing.credit_balance_transaction.created' || 
-    eventType === 'billing.credit_grant.created' ||               
-    eventType === 'billing.credit_grant.updated'                  
-  ) {
-    const dataObject = event.data.object;
-    
-    // Extract transaction properties dynamically based on the event structure
-    const transactionId = dataObject.id;
-    const amount = dataObject.amount_total || dataObject.amount || dataObject.ending_balance || dataObject.gross_amount || 0;
+  // Target tracking scope across your financial categories
+  const targetEvents = [
+    'credit_note.created', 'customer.balance_transaction.created',
+    'invoice.created', 'invoice.finalized', 'invoice.sent', 
+    'invoice.paid', 'invoice.payment_failed', 'invoice.voided', 
+    'invoice.marked_uncollectible', 'payment_intent.succeeded', 
+    'payment_intent.payment_failed', 'payment_intent.canceled', 
+    'charge.succeeded', 'charge.failed', 'checkout.session.completed', 
+    'checkout.session.expired', 'charge.refunded', 'refund.created', 
+    'refund.failed', 'charge.dispute.created', 
+    'charge.dispute.funds_withdrawn', 'charge.dispute.closed', 
+    'payout.created', 'payout.paid', 'payout.failed'
+  ];
+
+  if (targetEvents.includes(eventType)) {
+    const transactionId = dataObject.id || `evt_${event.id}`;
+    const amount = dataObject.amount_total || dataObject.amount || dataObject.gross_amount || 0;
     const currency = dataObject.currency || 'usd';
     
-    // Evaluate if the entry is an asset addition or reduction for settlement calculations
-    const calculationType = (eventType === 'credit_note.created' || amount < 0) 
-      ? 'negative_charge' 
-      : 'positive_charge';
+    // Evaluate if the entry is a negative or positive settlement allocation
+    let calculationType = 'positive_charge';
+    const isNegative = [
+      'credit_note.created', 'charge.refunded', 'refund.created', 
+      'charge.dispute.created', 'charge.dispute.funds_withdrawn'
+    ].includes(eventType) || (dataObject.amount && dataObject.amount < 0);
+
+    if (isNegative) {
+      calculationType = 'negative_charge';
+    }
 
     console.log(`⚖️ Processing ${calculationType} for event: ${eventType} [ID: ${transactionId}]`);
 
@@ -68,16 +49,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       // A. Write an unalterable compliance audit log into the Neon database
       const queryText = `
         INSERT INTO ledger_reconciliations (
-          session_id, 
-          charge_type, 
-          amount, 
-          currency, 
-          stripe_event_type, 
-          network_transaction_id, 
-          tax_year, 
-          irs_1099_compliant, 
-          raw_payload, 
-          status
+          session_id, charge_type, amount, currency, stripe_event_type, 
+          network_transaction_id, tax_year, irs_1099_compliant, raw_payload, status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (session_id) DO UPDATE SET 
           status = 'BALANCED',
@@ -85,20 +58,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       `;
 
       const queryValues = [
-        transactionId, 
-        calculationType, 
-        amount, 
-        currency.toUpperCase(), 
-        eventType, 
-        event.request ? event.request.id : 'tx_fed_system_fallback', 
-        new Date().getFullYear(), 
-        true, 
-        JSON.stringify(dataObject), 
-        'BALANCED' 
+        transactionId,
+        calculationType,
+        amount,
+        currency.toUpperCase(),
+        eventType,
+        event.request ? event.request.id : 'tx_fed_system_fallback',
+        new Date().getFullYear(),
+        true,
+        JSON.stringify(dataObject),
+        'BALANCED'
       ];
 
       await db.query(queryText, queryValues);
-      console.log(`📁 Unalterable corporate compliance log saved for transaction: ${transactionId}`);
+      console.log(`📁 Unalterable corporate compliance log saved: ${transactionId}`);
 
       // B. Dispatch automated Outlook correspondence telemetry report
       await mailTransporter.sendMail({
@@ -115,28 +88,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log(`📬 Telemetry correspondence completed for token: ${transactionId}`);
 
     } catch (processingError) {
-      // Catches and logs database or mail drops safely without crashing the execution loop
       console.error(`❌ External system communication failure: ${processingError.message}`);
     }
   }
 
-  // Return an explicit HTTP 200 to inform Stripe the event data stream was completely absorbed
+  // Return HTTP 200 to inform Stripe the data stream was absorbed completely
   res.status(200).json({ received: true });
-});
-
-// 4. GLOBAL MIDDLEWARE FOR ALL OTHER ROUTES
-app.use(express.json());
-
-// Sample placeholder route showcasing standard JSON functionality
-app.get('/health', (req, res) => {
-  res.json({ status: "ONLINE", business: "WE THE MUSCLE LLC" });
-});
-
-// 5. UNIFIED PORT LISTENER
-// Binds to all available interfaces ('0.0.0.0') as mandated by Render runtime architecture.
-const PORT = process.env.PORT || 1000;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Unified system tracking engine live on port ${PORT}`);
 });
 
