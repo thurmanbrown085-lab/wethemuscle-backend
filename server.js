@@ -1,3 +1,29 @@
+require('dotenv').config();
+const express = require('express');
+const app = express();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { Pool } = require('pg');
+const nodemailer = require('nodemailer');
+
+// 1. Initialize secure production database pool for Neon
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Required for serverless database connection handshake
+  }
+});
+
+// 2. Transporter for automated Outlook settlement telemetry
+const mailTransporter = nodemailer.createTransport({
+  host: '://office365.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.OUTLOOK_EMAIL,
+    pass: process.env.OUTLOOK_PASSWORD
+  }
+});
+
 // 3. STRIPE WEBHOOK ROUTE (Handles raw data stream for Settlements & Reconciliations)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -16,6 +42,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   // Target tracking scope across your financial categories
   const targetEvents = [
     'credit_note.created', 'customer.balance_transaction.created',
+    'customer_cash_balance_transaction.created', // 💡 Added modern cash balance event
     'invoice.created', 'invoice.finalized', 'invoice.sent', 
     'invoice.paid', 'invoice.payment_failed', 'invoice.voided', 
     'invoice.marked_uncollectible', 'payment_intent.succeeded', 
@@ -36,7 +63,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     let calculationType = 'positive_charge';
     const isNegative = [
       'credit_note.created', 'charge.refunded', 'refund.created', 
-      'charge.dispute.created', 'charge.dispute.funds_withdrawn'
+      'charge.dispute.created', 'charge.dispute.funds_withdrawn',
+      'customer_cash_balance_transaction.created' // Triggers ledger safety mapping for deductions/adjustments
     ].includes(eventType) || (dataObject.amount && dataObject.amount < 0);
 
     if (isNegative) {
@@ -94,5 +122,20 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
   // Return HTTP 200 to inform Stripe the data stream was absorbed completely
   res.status(200).json({ received: true });
+});
+
+// 4. GLOBAL MIDDLEWARE FOR ALL OTHER ROUTES
+app.use(express.json());
+
+// Sample placeholder route showcasing standard JSON functionality
+app.get('/health', (req, res) => {
+  res.json({ status: "ONLINE", business: "WE THE MUSCLE LLC" });
+});
+
+// 5. UNIFIED PORT LISTENER (Flexible Port Mapping)
+const port = process.env.PORT || 3000;
+
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server running on port ${port}`);
 });
 
