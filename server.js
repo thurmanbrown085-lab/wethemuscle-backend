@@ -37,8 +37,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  const eventType = event.type;
-
+  const eventType = event.ty
   // Track relevant settlement, reconciliation, and compliance events
   if (
     eventType === 'credit_note.created' ||                      // Handles negative balance adjustments / refunds
