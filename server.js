@@ -8,14 +8,17 @@ const nodemailer = require('nodemailer');
 // 1. Initialize secure production database pool for Neon
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 2,                        // 💡 OPTIMIZATION: Limits total open database sockets
+  idleTimeoutMillis: 5000,       // 💡 OPTIMIZATION: Safely cuts inactive links to save container memory
+  connectionTimeoutMillis: 2000, // 💡 OPTIMIZATION: Prevents server loop stalls during long handshakes
   ssl: {
-    rejectUnauthorized: false // Required for serverless database connection handshake
+    rejectUnauthorized: false
   }
 });
 
 // 2. Transporter for automated Outlook settlement telemetry
 const mailTransporter = nodemailer.createTransport({
-  host: 'smtp.office365.com', 
+  host: '://office365.com', 
   port: 587,
   secure: false,
   auth: {
@@ -43,9 +46,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     eventType === 'credit_note.created' ||                      
     eventType === 'customer.balance_transaction.created' ||     
     eventType === 'checkout.session.completed' ||
-    eventType === 'billing.credit_balance_transaction.created' || // ✅ Credit balances
-    eventType === 'billing.credit_grant.created' ||               // ✅ New Grants
-    eventType === 'billing.credit_grant.updated'                  // ✅ Updated Grants
+    eventType === 'billing.credit_balance_transaction.created' || 
+    eventType === 'billing.credit_grant.created' ||               
+    eventType === 'billing.credit_grant.updated'                  
   ) {
     const dataObject = event.data.object;
     
@@ -112,23 +115,28 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log(`📬 Telemetry correspondence completed for token: ${transactionId}`);
 
     } catch (processingError) {
+      // Catches and logs database or mail drops safely without crashing the execution loop
       console.error(`❌ External system communication failure: ${processingError.message}`);
     }
   }
 
+  // Return an explicit HTTP 200 to inform Stripe the event data stream was completely absorbed
   res.status(200).json({ received: true });
 });
 
 // 4. GLOBAL MIDDLEWARE FOR ALL OTHER ROUTES
 app.use(express.json());
 
+// Sample placeholder route showcasing standard JSON functionality
 app.get('/health', (req, res) => {
   res.json({ status: "ONLINE", business: "WE THE MUSCLE LLC" });
 });
 
 // 5. UNIFIED PORT LISTENER
+// Binds to all available interfaces ('0.0.0.0') as mandated by Render runtime architecture.
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Unified system tracking engine live on port ${PORT}`);
 });
- 
+
