@@ -138,4 +138,62 @@ const port = process.env.PORT || 3000;
 app.listen(port, '0.0.0.0', () => {
   console.log(`Server running on port ${port}`);
 });
+const express = require('express');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { Pool } = require('pg');
+
+const app = express();
+
+// Connect securely to your Neon PostgreSQL Project 2 database
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: true } // Required by Neon for secure encryption
+});
+
+// CRITICAL FOR 403 FIX: Stripe webhooks MUST read raw unparsed data
+app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    // 1. Bodyguard check: Verifies the webhook signature using your whsec_ key
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error(`💥 Webhook Signature Verification Failed: ${err.message}`);
+    return res.status(403).send(`Webhook Error: ${err.message}`); // Slams the door safely
+  }
+
+  // 2. The signature is valid! Process the specific payment event
+  if (event.type === 'invoice.paid' || event.type === 'checkout.session.completed') {
+    const sessionOrInvoice = event.data.object;
+   
+    // Extract metadata or invoice IDs you tied to the session
+    const invoiceId = sessionOrInvoice.id;
+    const amountPaid = sessionOrInvoice.amount_paid || sessionOrInvoice.amount_total;
+
+    try {
+      // 3. Command Neon to update your ledger (Uses clean, standardized columns to avoid 703 errors)
+      const queryText = `
+        UPDATE invoices
+        SET is_settled = true
+        WHERE invoice_id = $1;
+      `;
+      await pool.query(queryText, [invoiceId]);
+      console.log(`✅ Successfully updated Neon ledger for Invoice: ${invoiceId}`);
+     
+    } catch (dbErr) {
+      console.error(`💥 Neon PostgreSQL Error (Check columns/703):`, dbErr.message);
+      // We still return a 200 to Stripe so it doesn't keep spamming retries
+    }
+  }
+
+  // Acknowledge receipt back to Stripe instantly
+  res.json({ received: true });
+});
+
+// Serve your public frontend files out of a folder named "public"
+app.use(express.static(__dirname));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Bodyguard server actively running on port ${PORT}`));
 

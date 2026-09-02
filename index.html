@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTM Global Dashboard</title>
+    <style>
+        body { font-family: sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 12px; }
+        h1 { color: #38bdf8; border-bottom: 2px solid #334155; padding-bottom: 10px; }
+        .input-group { margin: 20px 0; display: flex; gap: 10px; }
+        input { flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; }
+        .btn-group { display: flex; gap: 15px; margin: 20px 0; }
+        button { background: #0284c7; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; }
+        .stripe-btn { background: #16a34a; }
+        .import-btn { background: #a855f7; }
+        #display-panel { background: #0f172a; padding: 20px; border-radius: 8px; border: 1px solid #334155; min-height: 150px; white-space: pre-wrap; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛡️ We The Muscle LLC - Management Interface</h1>
+        <p>Select an integrated network stream below to query live datasets:</p>
+       
+        <div class="input-group">
+            <input type="text" id="target-url" placeholder="Paste product URL here...">
+            <button class="import-btn" onclick="importProduct()">📦 Import Product</button>
+        </div>
+       
+        <div class="btn-group">
+            <button onclick="fetchData('/api/sam-data')">🇺🇸 SAM.gov Data</button>
+            <button onclick="fetchData('/api/open-data')">🌐 OpenGov Data</button>
+            <button class="stripe-btn" onclick="triggerStripe()">💳 Stripe Sandbox</button>
+        </div>
+
+        <h3>📦 Live Interface Stream Output:</h3>
+        <div id="display-panel">System active. Standing by...</div>
+    </div>
+
+    <script>
+        async function importProduct() {
+            const panel = document.getElementById('display-panel');
+            const urlInput = document.getElementById('target-url').value;
+            if(!urlInput) return panel.innerText = 'Please paste a valid URL first.';
+            panel.innerText = 'Scraping provider data...';
+            try {
+                const response = await fetch('/api/import-product', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: urlInput })
+                });
+                const data = await response.json();
+                panel.innerText = JSON.stringify(data, null, 2);
+            } catch (error) { panel.innerText = 'Scraping failure: ' + error.message; }
+        }
+
+        async function fetchData(endpoint) {
+            const panel = document.getElementById('display-panel');
+            panel.innerText = 'Connecting... Please wait...';
+            try {
+                const response = await fetch(endpoint);
+                const data = await response.json();
+                panel.innerText = JSON.stringify(data, null, 2);
+            } catch (error) { panel.innerText = 'Error: ' + error.message; }
+        }
+
+        async function triggerStripe() {
+            const panel = document.getElementById('display-panel');
+            panel.innerText = 'Initializing Stripe checkout...';
+            try {
+                const response = await fetch('/create-checkout-session', { method: 'POST' });
+                const data = await response.json();
+                panel.innerText = JSON.stringify(data, null, 2);
+            } catch (error) { panel.innerText = 'Stripe connection failure: ' + error.message; }
+        }
+    </script>
+</body>
+</html>
+
