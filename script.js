@@ -4,7 +4,7 @@
  * @param {Object} data - The core financial transaction details
  */
 async function processPaymentIntegration(transactionType, data) {
-  // Hardcoded directly to your WE THE MUSCLE live production API container routing path
+  // Links directly to your WE THE MUSCLE production web service routing container
   const endpoint = 'https://onrender.com';
 
   const transactionPayload = {
