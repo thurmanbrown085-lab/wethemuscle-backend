@@ -29,7 +29,7 @@ function detectTransmissionType(inputString) {
 
 // Master Production Route for POS, Online, and Credits
 app.post('/api/stripe-reconcile', async (req, res) => {
-  const { transactionType, amount, invoiceId, terminalId, customerId } = req.body;
+  const { transactionType, amount, invoiceId, terminalId, customerId, stripeId } = req.body;
 
   try {
     let stripeAction;
@@ -61,8 +61,10 @@ app.post('/api/stripe-reconcile', async (req, res) => {
         break;
 
       case 'INVOICE_CREDIT':
+        // FIX: Passes the required payment intent string directly to Stripe
         stripeAction = await stripe.refunds.create({
           amount: Math.abs(amount),
+          payment_intent: stripeId || invoiceId, // Looks for Stripe tracking id first
           metadata: reconciliationMetadata
         });
         break;
