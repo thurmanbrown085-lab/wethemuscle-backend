@@ -76,4 +76,24 @@
     </script>
 </body>
 </html>
+<script>
+  const script = document.createElement("script");
+  script.src = "https://the-service-provider.com"; 
+  script.async = true;
+  document.head.appendChild(script);
 
+  window.addEventListener("message", (event) => {
+    if (event.origin !== "https://the-service-provider.com") return;
+    const encryptedScript = event.data;
+    console.log("Received encrypted data safely:", encryptedScript);
+
+    fetch('/api/save-secure-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secureData: encryptedScript })
+    })
+    .then(res => res.json())
+    .then(result => console.log("Saved to system:", result))
+    .catch(err => console.error("Error sending to backend:", err));
+  });
+</script> 
