@@ -82,3 +82,24 @@ app.post('/api/stripe-reconcile', async (req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Secure server running on port ${port}`));
+// Secure Endpoint to receive and process encrypted data from index.html
+app.post('/api/save-secure-data', async (req, res) => {
+  try {
+    const { secureData } = req.body;
+
+    if (!secureData) {
+      return res.status(400).json({ success: false, error: "No data payload received" });
+    }
+
+    console.log("--- SUCCESS: Encrypted packet caught on backend! ---");
+    console.log("Payload:", secureData);
+
+    // TODO: Add your Neon database decryption and INSERT queries right here
+
+    res.status(200).json({ success: true, message: "Data securely received by server!" });
+  } catch (error) {
+    console.error("Secure data processing error:", error.message);
+    res.status(500).json({ success: false, error: "Internal server processing failure" });
+  }
+});
+
