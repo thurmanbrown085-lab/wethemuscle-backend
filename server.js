@@ -1,4 +1,4 @@
-onst express = require('express');
+const express = require('express');
 const { Pool } = require('pg');
 
 const app = express();
@@ -37,7 +37,6 @@ app.post('/api/save-secure-data', async (req, res) => {
     const payload = typeof secureData === 'string' ? JSON.parse(secureData) : secureData;
 
     // --- FINANCIAL MAP ENGINE ---
-    // Extract variables matching your custom schema names
     const invoiceNum = payload.invoice_number || `INV-${Date.now()}`;
     const customerId = payload.customer_id || 'UNKNOWN_CUST';
     const transactionAmount = cleanAmount(payload.amount);
@@ -53,7 +52,7 @@ app.post('/api/save-secure-data', async (req, res) => {
       [invoiceNum, customerId, Math.abs(transactionAmount), chargeType]
     );
 
-    // 3. Insert baseline data into TRANSACTION_METHODS setup
+    // 3. Insert data into TRANSACTION_METHODS setup
     await client.query(
       `INSERT INTO transaction_methods (transmission_id, method_type, masked_account_identifier)
        VALUES ($1, $2, $3) ON CONFLICT (transmission_id) DO NOTHING`,
@@ -77,7 +76,7 @@ app.post('/api/save-secure-data', async (req, res) => {
     await client.query(
       `INSERT INTO invoice_settlement_ledger (reconciliation_id, tax_compliance_logged, cleared_at)
        VALUES ($1, $2, NOW())`,
-      [reconciliationId, chargeType === 'positive'] // Flag automated accounting logic
+      [reconciliationId, chargeType === 'positive'] 
     );
 
     // Commit all tables atomically
@@ -91,7 +90,7 @@ app.post('/api/save-secure-data', async (req, res) => {
     });
 
   } catch (error) {
-    await client.query('ROLLBACK'); // Cancel database additions if any constraint crashes
+    await client.query('ROLLBACK'); // Cancel changes if any constraint crashes
     console.error("[Fatal Production Error]", error.message);
     res.status(500).json({ success: false, error: "Transaction processing failed, changes safely rolled back." });
   } finally {
@@ -109,6 +108,5 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Optimized for Render's environment defaults
 app.listen(PORT, () => console.log(`Server live on processing cluster channel port ${PORT}`));
-
