@@ -49,14 +49,14 @@ app.post('/api/save-secure-data', async (req, res) => {
     const invoiceNum = payload.invoice_number || `INV-${Date.now()}`;
     const customerId = payload.customer_id || 'UNKNOWN_CUST';
     const transactionAmount = cleanAmount(payload.amount);
-    
+
     // Determine the invoice type enum state based on structural mathematical sign
     const chargeType = transactionAmount >= 0 ? 'positive' : 'negative';
     const transmissionId = payload.transmission_id || `TRM-${Date.now()}`;
 
     // 2. Insert into INVOICES matrix
     await client.query(
-      `INSERT INTO invoices (invoice_number, customer_id, amount, type) 
+      `INSERT INTO invoices (invoice_number, customer_id, amount, type)
        VALUES ($1, $2, $3, $4) ON CONFLICT (invoice_number) DO NOTHING`,
       [invoiceNum, customerId, Math.abs(transactionAmount), chargeType]
     );
@@ -85,15 +85,15 @@ app.post('/api/save-secure-data', async (req, res) => {
     await client.query(
       `INSERT INTO invoice_settlement_ledger (reconciliation_id, tax_compliance_logged, cleared_at)
        VALUES ($1, $2, NOW())`,
-      [reconciliationId, chargeType === 'positive'] 
+      [reconciliationId, chargeType === 'positive']
     );
 
     // Commit all tables atomically
     await client.query('COMMIT');
     console.log(`[Production] Settlement matrix successfully balanced and closed.`);
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       message: "Live integration parsed, ledger reconciled, and settlement logged safely!",
       log_reference: logId
     });
