@@ -1,8 +1,12 @@
 const express = require('express');
 const { Pool } = require('pg');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
+
+// Force Node to serve your visual HTML assets automatically
+app.use(express.static(__dirname));
 
 // Initialize secure connection pool using Render's environment variable
 const pool = new Pool({
@@ -12,6 +16,11 @@ const pool = new Pool({
 
 // Helper utility to clean numeric strings into safe database decimals
 const cleanAmount = (val) => parseFloat(String(val || 0).replace(/[^0-9.-]/g, ''));
+
+// Catch-all route to explicitly serve index.html when hitting the home directory
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // PRODUCTION ROUTE: Catches and resolves raw library JSON payloads
 app.post('/api/save-secure-data', async (req, res) => {
@@ -108,5 +117,5 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 10000; // Optimized for Render's environment defaults
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server live on processing cluster channel port ${PORT}`));
