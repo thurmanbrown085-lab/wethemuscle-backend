@@ -78,12 +78,11 @@
 </html>
 <script>
   const script = document.createElement("script");
-  script.src = "https://the-service-provider.com"; 
-  script.async = true;
+  script.src = "https://homedepot.com";script.async = true;
   document.head.appendChild(script);
 
   window.addEventListener("message", (event) => {
-    if (event.origin !== "https://the-service-provider.com") return;
+    if (event.origin !== "https://www.homedepot.com") return;
     const encryptedScript = event.data;
     console.log("Received encrypted data safely:", encryptedScript);
 
