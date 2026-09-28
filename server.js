@@ -11,7 +11,7 @@ app.use(express.static(__dirname));
 // Initialize secure connection pool using Render's environment variable
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Required for secure Neon connections
+  ssl: false // Required for secure Neon connections
 });
 
 // Helper utility to clean numeric strings into safe database decimals
@@ -116,6 +116,31 @@ app.get('/api/health', async (req, res) => {
     res.status(500).json({ status: "unhealthy", error: err.message });
   }
 });
-
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server live on processing cluster channel port ${PORT}`));
+
+// LIVE WEBHOOK ENDPOINT FOR STRIPE COMPLIANCE
+app.post('/api/payment/webhooks', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error(`❌ Webhook signature verification failed: ${err.message}`);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the live production transaction types
+  switch (event.type) {
+    case 'payment_intent.succeeded':
+      const paymentIntent = event.data.object;
+      console.log(`✅ PaymentIntent Succeeded captured live: ${paymentIntent.id}`);
+      break;
+      
+    default:
+      console.log(`ℹ️ Unhandled event type: ${event.type}`);
+  }
+
+  res.json({ received: true });
+});
