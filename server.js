@@ -144,3 +144,34 @@ app.post('/api/payment/webhooks', express.raw({ type: 'application/json' }), (re
 
   res.json({ received: true });
 });
+
+// --- AUTOMATED SKU EXTRACTION PIPELINE ---
+const multer = require('multer');
+const { createWorker } = require('tesseract.js');
+
+const storage = multer.memoryStorage();
+const upload = multer.single('sku_image');
+
+app.post('/scan-transaction', upload, async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: "No image payload provided." });
+        }
+
+        const worker = await createWorker('eng');
+        const { data: { text } } = await worker.recognize(req.file.buffer);
+        await worker.terminate();
+
+        const cleanSku = text.replace(/[^a-zA-Z0-9-]/g, '').trim();
+        console.log(`[LEDGER] Extracted SKU: ${cleanSku}. Processing payload matching...`);
+
+        res.status(200).json({ 
+            success: true, 
+            extractedSku: cleanSku,
+            message: "SKU captured. Ready to route live mode payload." 
+        });
+    } catch (error) {
+        console.error("[ERROR] Processing image payload failed:", error);
+        res.status(500).json({ error: "System loop failure during extraction." });
+    }
+});
