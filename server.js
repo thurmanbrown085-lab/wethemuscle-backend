@@ -150,7 +150,7 @@ const multer = require('multer');
 const { createWorker } = require('tesseract.js');
 
 const storage = multer.memoryStorage();
-const upload = multer.single('sku_image');
+const upload = multer({ storage: multer.memoryStorage() }).single('sku_image');
 
 app.post('/scan-transaction', upload, async (req, res) => {
     try {
