@@ -8,7 +8,7 @@ server.use(express.json());
 
 // 1. Establish Secure Connection Parameters for the Cloud Database Ledger
 const dbPool = new pg.Pool({
-    connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_E5sJcXC7rBQS@ep-withered-salad-axwtehu4-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    connectionString: process.env.DATABASE_URL
 });
 
 console.log("Server initialized");
