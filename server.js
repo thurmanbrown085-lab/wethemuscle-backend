@@ -1,162 +1,79 @@
 const express = require('express');
-const { Pool } = require('pg');
-const path = require('path');
-
-const app = express();
-app.use(express.json());
-
-// Force Node to serve your visual HTML assets automatically
-app.use(express.static(__dirname));
-
-// Initialize secure connection pool using Render's environment variable
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: false // Required for secure Neon connections
-});
-
-// Helper utility to clean numeric strings into safe database decimals
-const cleanAmount = (val) => parseFloat(String(val || 0).replace(/[^0-9.-]/g, ''));
-
-// Catch-all route to explicitly serve index.html when hitting the home directory
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// PRODUCTION ROUTE: Catches and resolves raw library JSON payloads
-app.post('/api/save-secure-data', async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { secureData } = req.body;
-    if (!secureData) {
-      return res.status(400).json({ success: false, error: "Empty payload rejected" });
-    }
-
-    // Begin an atomic database transaction
-    await client.query('BEGIN');
-
-    // 1. Raw Archive: Write the raw file safely to your backend_2_logs JSONB column
-    const logResult = await client.query(
-      `INSERT INTO backend_2_logs (data_payload) VALUES ($1) RETURNING id`,
-      [typeof secureData === 'string' ? JSON.parse(secureData) : secureData]
-    );
-    const logId = logResult.rows[0].id;
-    console.log(`[Production] Raw JSON archived into backend_2_logs ID: ${logId}`);
-
-    // Parse the object data mapping fields out dynamically
-    const payload = typeof secureData === 'string' ? JSON.parse(secureData) : secureData;
-
-    // --- FINANCIAL MAP ENGINE ---
-    const invoiceNum = payload.invoice_number || `INV-${Date.now()}`;
-    const customerId = payload.customer_id || 'UNKNOWN_CUST';
-    const transactionAmount = cleanAmount(payload.amount);
-
-    // Determine the invoice type enum state based on structural mathematical sign
-    const chargeType = transactionAmount >= 0 ? 'positive' : 'negative';
-    const transmissionId = payload.transmission_id || `TRM-${Date.now()}`;
-
-    // 2. Insert into INVOICES matrix
-    await client.query(
-      `INSERT INTO invoices (invoice_number, customer_id, amount, type)
-       VALUES ($1, $2, $3, $4) ON CONFLICT (invoice_number) DO NOTHING`,
-      [invoiceNum, customerId, Math.abs(transactionAmount), chargeType]
-    );
-
-    // 3. Insert data into TRANSACTION_METHODS setup
-    await client.query(
-      `INSERT INTO transaction_methods (transmission_id, method_type, masked_account_identifier)
-       VALUES ($1, $2, $3) ON CONFLICT (transmission_id) DO NOTHING`,
-      [transmissionId, payload.method_type || 'system_ledger', payload.masked_account || 'XXXX-SYSTEM']
-    );
-
-    // 4. Calculate accounting fee deductions and clear net metrics
-    const gross = Math.abs(transactionAmount);
-    const fee = cleanAmount(payload.fee_deduction || 0);
-    const net = gross - fee;
-
-    // Insert into RECONCILIATION_LEDGER matrix
-    const recResult = await client.query(
-      `INSERT INTO reconciliation_ledger (transmission_id, invoice_number, gross_amount, fee_deduction, net_settlement, status)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [transmissionId, invoiceNum, gross, fee, net, 'unreconciled']
-    );
-    const reconciliationId = recResult.rows[0].id;
-
-    // 5. Build settlement clearing profile pipeline
-    await client.query(
-      `INSERT INTO invoice_settlement_ledger (reconciliation_id, tax_compliance_logged, cleared_at)
-       VALUES ($1, $2, NOW())`,
-      [reconciliationId, chargeType === 'positive']
-    );
-
-    // Commit all tables atomically
-    await client.query('COMMIT');
-    console.log(`[Production] Settlement matrix successfully balanced and closed.`);
-
-    res.status(200).json({
-      success: true,
-      message: "Live integration parsed, ledger reconciled, and settlement logged safely!",
-      log_reference: logId
-    });
-
-  } catch (error) {
-    await client.query('ROLLBACK'); // Cancel changes if any constraint crashes
-    console.error("[Fatal Production Error]", error.message);
-    res.status(500).json({ success: false, error: "Transaction processing failed, changes safely rolled back." });
-  } finally {
-    client.release();
-  }
-});
-
-// Basic service status ping check
-app.get('/api/health', async (req, res) => {
-  try {
-    await pool.query('SELECT 1');
-    res.status(200).json({ status: "healthy", database: "connected" });
-  } catch (err) {
-    res.status(500).json({ status: "unhealthy", error: err.message });
-  }
-});
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server live on processing cluster channel port ${PORT}`));
-
-// LIVE WEBHOOK ENDPOINT FOR STRIPE COMPLIANCE
-app.post('/api/payment/webhooks', express.raw({ type: 'application/json' }), (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  let event;
-
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    console.error(`❌ Webhook signature verification failed: ${err.message}`);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  // Handle the live production transaction types
-  switch (event.type) {
-    case 'payment_intent.succeeded':
-      const paymentIntent = event.data.object;
-      console.log(`✅ PaymentIntent Succeeded captured live: ${paymentIntent.id}`);
-      break;
-      
-    default:
-      console.log(`ℹ️ Unhandled event type: ${event.type}`);
-  }
-
-  res.json({ received: true });
-});
-
-// --- AUTOMATED SKU EXTRACTION PIPELINE ---
 const multer = require('multer');
 const { createWorker } = require('tesseract.js');
+const pg = require('pg');
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage: multer.memoryStorage() }).single('sku_image');
+const server = express();
+server.use(express.json());
 
-app.post('/scan-transaction', upload, async (req, res) => {
+// 1. Establish Secure Connection Parameters for the Cloud Database Ledger
+const dbPool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_E5sJcXC7rBQS@ep-withered-salad-axwtehu4-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require"
+});
+
+console.log("Server initialized");
+console.log("Initialization complete");
+
+// 2. Core Unified Payment Processor Logic
+async function processUnifiedPayment(customerEmail, amountInCents, metadataContext) {
     try {
-        if (!req.file) {
-            return res.status(400).json({ error: "No image payload provided." });
+        const stripe = require('stripe')(process.env.STRIPE_LIVE_SECRET_KEY);
+        console.log(`[PAYMENT] Processing unified entry for ${customerEmail}`);
+        
+        const customers = await stripe.customers.list({ email: customerEmail, limit: 1 });
+        if (customers.data.length === 0) {
+            throw new Error('Customer account registration profile not found.');
         }
+        const customerId = customers.data[0].id;
+
+        const paymentMethods = await stripe.paymentMethods.list({
+            customer: customerId,
+            type: 'card'
+        });
+        if (paymentMethods.data.length === 0) {
+            throw new Error('No active or valid payment methods found for this profile.');
+        }
+        const paymentMethodId = paymentMethods.data[0].id;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amountInCents,
+            currency: 'usd',
+            customer: customerId,
+            payment_method: paymentMethodId,
+            off_session: true, 
+            confirm: true,     
+            metadata: {
+                business_name: "WE THE MUSCLE LLC",
+                ...metadataContext
+            }
+        });
+
+        return { success: true, id: paymentIntent.id, status: paymentIntent.status };
+    } catch (error) {
+        console.error("[PAYMENT ERROR] Core processing failed:", error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// 3. Web-Based Frontend Correspondence Route (Path A)
+server.post('/api/v1/checkout-pay-button', async (req, res) => {
+    const { customerEmail, amountInCents, adjustmentId } = req.body;
+    console.log(`[TRIGGER] Payment button click received for ${customerEmail}`);
+    
+    const result = await processUnifiedPayment(customerEmail, amountInCents, {
+        source_channel: "frontend_button",
+        adjustment_id: adjustmentId
+    });
+
+    if (result.success) res.status(200).json(result);
+    else res.status(400).json(result);
+});
+
+// 4. Automated Image/Barcode Extraction Endpoint (Path B)
+const upload = multer({ storage: multer.memoryStorage() }).single('sku_image');
+server.post('/scan-transaction', upload, async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: "No image payload provided." });
 
         const worker = await createWorker('eng');
         const { data: { text } } = await worker.recognize(req.file.buffer);
@@ -165,13 +82,93 @@ app.post('/scan-transaction', upload, async (req, res) => {
         const cleanSku = text.replace(/[^a-zA-Z0-9-]/g, '').trim();
         console.log(`[LEDGER] Extracted SKU: ${cleanSku}. Processing payload matching...`);
 
-        res.status(200).json({ 
-            success: true, 
-            extractedSku: cleanSku,
-            message: "SKU captured. Ready to route live mode payload." 
+        const mockItemPriceCents = 5000; 
+        const customerEmail = "your_login_email@domain.com"; 
+        
+        const result = await processUnifiedPayment(customerEmail, mockItemPriceCents, {
+            source_channel: "backend_barcode_parser",
+            adjustment_id: cleanSku
         });
+
+        if (result.success) {
+            await dbPool.query(
+                "INSERT INTO ledger_reconciliations (adjustment_id, type, amount, status, reference_id) VALUES (\$1, \$2, \$3, \$4, \$5)",
+                [cleanSku, "settlement_reconciliation", 50.00, "processed", result.id]
+            );
+            console.log(`[POSTGRESQL] Secure tracking row inserted for ${cleanSku}`);
+        }
+
+        res.status(200).json({ success: true, extractedSku: cleanSku, paymentStatus: result.status });
     } catch (error) {
         console.error("[ERROR] Processing image payload failed:", error);
         res.status(500).json({ error: "System loop failure during extraction." });
     }
+});
+
+// 5. Open Communication Cluster Port Links
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Server live on processing cluster channel port ${PORT}`);
+});
+
+// --- AUTOMATED MICROSOFT 365 LEDGER BACKUP ROUTINE ---
+const nodemailer = require('nodemailer');
+
+/**
+ * Compiles a ledger summary from PostgreSQL and dispatches it straight to Outlook
+ */
+async function triggerMicrosoft365Backup() {
+    try {
+        console.log("[BACKUP] Extracting master ledger logs from PostgreSQL cluster...");
+        
+        // 1. Query the 50 most recent entries across both accounts from your database tables
+        const queryResult = await dbPool.query(
+            "SELECT id, created_at, adjustment_id, type, amount, status FROM ledger_reconciliations ORDER BY created_at DESC LIMIT 50"
+        );
+
+        if (queryResult.rows.length === 0) {
+            console.log("[BACKUP] Ledger tables are empty. Skipping automated email backup loop.");
+            return;
+        }
+
+        // 2. Format the rows into a clean, unalterable text table layout
+        let logReportTable = "ID   | TIMESTAMP           | ADJUSTMENT ID        | TYPE                     | AMOUNT   | STATUS\n";
+        logReportTable += "-------------------------------------------------------------------------------------------------\n";
+        
+        queryResult.rows.forEach(row => {
+            logReportTable += `${row.id.toString().padEnd(4)} | ${row.created_at.toISOString().slice(0,19)} | ${row.adjustment_id.padEnd(20)} | ${row.type.padEnd(24)} | \$${row.amount.toString().padEnd(7)} | ${row.status}\n`;
+        });
+
+        // 3. Authenticate securely with your Microsoft 365 cloud email vault
+        const transporter = nodemailer.createTransport({
+            host: "smtp.office365.com",
+            port: 587,
+            secure: false, // TLS requirements
+            auth: {
+                user: process.env.OUTLOOK_EMAIL || "thurmanbrown085@gmail.com",
+                pass: process.env.OUTLOOK_PASSWORD 
+            },
+            tls: { ciphers: 'SSLv3' }
+        });
+
+        // 4. Dispatch the encrypted data summary straight to your inbox
+        const mailOptions = {
+            from: process.env.OUTLOOK_EMAIL || "thurmanbrown085@gmail.com",
+            to: process.env.OUTLOOK_EMAIL || "thurmanbrown085@gmail.com",
+            subject: `📊 Automated Ledger Backup Report - ${new Date().toISOString().slice(0,10)}`,
+            text: `This is an automated structural ledger backup compiled straight from your live PostgreSQL tables for WE THE MUSCLE LLC.\n\n=== RECONCILIATION DATA DUMP ===\n\n${logReportTable}\n\n=== END OF REPORT ===`
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`📡 Secure Backup Archive Delivered to Microsoft 365: ${info.messageId}`);
+
+    } catch (error) {
+        console.error("💥 Automated backup routine failed:", error.message);
+    }
+}
+
+// 5. Expose an administrative webhook to force a manual email trigger if needed
+server.post('/api/v1/admin/trigger-backup', async (req, res) => {
+    await triggerMicrosoft365Backup();
+    res.status(200).json({ success: true, message: "Backup pipeline fired smoothly." });
 });
