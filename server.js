@@ -172,3 +172,106 @@ server.post('/api/v1/admin/trigger-backup', async (req, res) => {
     await triggerMicrosoft365Backup();
     res.status(200).json({ success: true, message: "Backup pipeline fired smoothly." });
 });
+
+// --- ADVANCED PLATFORM SECURITY: PILLARS 3, 4, & 5 ---
+
+// 1. PostgreSQL Exception Queue Logging Mechanism
+async function logToExceptionQueue(errorMessage, errorStack, payloadContext = {}) {
+    try {
+        console.error(`[EXCEPTION QUEUE] Logging failure condition: ${errorMessage}`);
+        await dbPool.query(
+            "INSERT INTO exception_queue (error_message, error_stack, payload_context) VALUES (\$1, \$2, \$3)",
+            [errorMessage, errorStack, JSON.stringify(payloadContext)]
+        );
+    } catch (dbErr) {
+        console.error("💥 Critical Failure: Exception queue table unreachable:", dbErr.message);
+    }
+}
+
+// 2. Webhook Queue & Dead Letter Queue (DLQ) Memory Rail Array
+const webhookQueue = [];
+const deadLetterQueue = [];
+let isProcessingQueue = false;
+
+async function processWebhookQueueWorker() {
+    if (isProcessingQueue || webhookQueue.length === 0) return;
+    isProcessingQueue = true;
+
+    while (webhookQueue.length > 0) {
+        const currentTask = webhookQueue.shift();
+        console.log(`[QUEUE] Worker popped item ${currentTask.taskId} from active queue memory.`);
+
+        try {
+            // Re-route task execution directly back into our core payment processor
+            const paymentResult = await processUnifiedPayment(
+                currentTask.payload.customerEmail,
+                currentTask.payload.amountInCents,
+                currentTask.payload.context
+            );
+
+            if (!paymentResult.success) {
+                throw new Error(paymentResult.error || "Queue payment handling failed.");
+            }
+            
+            console.log(`[QUEUE SUCCESS] Task ${currentTask.taskId} fully resolved.`);
+        } catch (taskErr) {
+            currentTask.retryCount += 1;
+            console.warn(`[QUEUE WARN] Task ${currentTask.taskId} failed. Attempt count: ${currentTask.retryCount}/3`);
+
+            if (currentTask.retryCount >= 3) {
+                console.error(`[DLQ ALERT] Task ${currentTask.taskId} exceeded retry constraints. Moving to Dead Letter Queue.`);
+                currentTask.failureReason = taskErr.message;
+                deadLetterQueue.push(currentTask);
+                
+                // Route task straight into database exception triage tracking tables
+                await logToExceptionQueue(
+                    `Webhook Queue Exceeded Retry Limit: ${taskErr.message}`,
+                    taskErr.stack,
+                    currentTask
+                );
+            } else {
+                // Re-queue task back at the end of the memory line for another execution attempt
+                webhookQueue.push(currentTask);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Cool-down gap
+            }
+        }
+    }
+    isProcessingQueue = false;
+}
+
+// 3. Telemetry Geofencing Validation Rules Middleware
+function enforceTelemetryGeofencing(req, res, next) {
+    // Read incoming traffic markers; fallback to US headers if testing on localhost
+    const incomingIpCountry = req.headers['cf-ipcountry'] || req.headers['x-forwarded-for-country'] || 'US';
+    const forwardingClientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    console.log(`[GEOFENCE] Telemetry check for IP ${forwardingClientIp} from country region: ${incomingIpCountry}`);
+
+    // Restrict processing channels exclusively to secure North American regions (US / CA)
+    if (incomingIpCountry !== 'US' && incomingIpCountry !== 'CA') {
+        console.error(`[⚠️ BLOCK] Geofence intrusion detected from unauthorized region: ${incomingIpCountry}`);
+        
+        logToExceptionQueue(
+            "Geofence Telemetry Intrusion Blocked",
+            `IP address location outside parameters: ${incomingIpCountry}`,
+            { clientIp: forwardingClientIp, country: incomingIpCountry, targetPath: req.path }
+        );
+
+        return res.status(403).json({ error: "Access denied: Unauthorized transaction telemetry location coordinates." });
+    }
+
+    next();
+}
+
+// Attach Geofencing tracking firewall rules directly to your core payment channels
+server.use('/api/v1/checkout-pay-button', enforceTelemetryGeofencing);
+server.use('/scan-transaction', enforceTelemetryGeofencing);
+
+// Administrative Endpoint to inspect active queue buffers and DLQ logs
+server.get('/api/v1/admin/queue-status', (req, res) => {
+    res.status(200).json({
+        activeQueueLength: webhookQueue.length,
+        deadLetterQueueLength: deadLetterQueue.length,
+        deadLetterQueueContents: deadLetterQueue
+    });
+});
