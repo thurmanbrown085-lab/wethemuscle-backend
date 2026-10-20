@@ -275,3 +275,16 @@ server.get('/api/v1/admin/queue-status', (req, res) => {
         deadLetterQueueContents: deadLetterQueue
     });
 });
+
+// Attach Geofencing tracking firewall rules directly to your core payment channels
+server.use('/api/v1/checkout-pay-button', enforceTelemetryGeofencing);
+server.use('/scan-transaction', enforceTelemetryGeofencing);
+
+// Administrative Endpoint to inspect active queue buffers and DLQ logs
+server.get('/api/v1/admin/queue-status', (req, res) => {
+    res.status(200).json({
+        activeQueueLength: webhookQueue.length,
+        deadLetterQueueLength: deadLetterQueue.length,
+        deadLetterQueueContents: deadLetterQueue
+    });
+});
