@@ -53,7 +53,7 @@ app.get('/api/transmissions/smartlink', (req, res) => {
     }
 });
 
-app.listen(10000, () => console.log('WTM Gateway API listening on port 10000'));
+app.listen(process.env.PORT || 10000, () => console.log('WTM Gateway API listening on port process.env.PORT || 10000'));
 
 // Stripe Compliance Verification Endpoint
 app.get('/privacy', (req, res) => {
