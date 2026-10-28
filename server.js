@@ -82,3 +82,14 @@ app.get('/privacy', (req, res) => {
     </html>
   `);
 });
+
+// Live Stripe Balance Verification Route Handler
+app.get('/check-stripe-balance', async (req, res) => {
+  try {
+    const stripe = require('stripe')('_51S1ojLGrzhwvCQ6W7JlkLUgCzEo1zmOktn4mtCurCmU2rgD3NIW1f2pATCiw2aCIc2DYnssorudhwqzEsXtHFZTo00Jxgwnt9O');
+    const balance = await stripe.balance.retrieve();
+    res.json({ success: true, business: "WE THE MUSCLE LLC", data: balance });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
