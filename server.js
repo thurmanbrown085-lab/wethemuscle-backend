@@ -54,3 +54,31 @@ app.get('/api/transmissions/smartlink', (req, res) => {
 });
 
 app.listen(10000, () => console.log('WTM Gateway API listening on port 10000'));
+
+// Stripe Compliance Verification Endpoint
+app.get('/privacy', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Privacy Policy - WE THE MUSCLE LLC</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; max-width: 800px; margin: 0 auto;">
+        <h1>Privacy Policy - WE THE MUSCLE LLC</h1>
+        <p><strong>Last Updated: October 2026</strong></p>
+        <p>WE THE MUSCLE LLC ("we," "us," or "our") is committed to protecting your privacy. This policy outlines how we handle financial data collected via Stripe Financial Connections.</p>
+        <h3>1. Data Collection & Use</h3>
+        <ul>
+          <li><strong>Tokenized Account/Routing Numbers:</strong> Used to safely establish valid payment channels and execute automated direct settlements.</li>
+          <li><strong>Account Balance Data:</strong> Monitored prior to fund transfers to verify sufficient funding and avoid account overdraft loops.</li>
+          <li><strong>Transaction Histories:</strong> Processed to auto-reconcile business invoices and maintain internal financial ledgers.</li>
+          <li><strong>Account Ownership Details:</strong> Used to cross-verify identities against banking records for regulatory compliance.</li>
+        </ul>
+        <h3>2. Data Safeguards</h3>
+        <ul>
+          <li><strong>Location:</strong> All data is stored and processed exclusively within secure networks inside the United States.</li>
+          <li><strong>Sharing:</strong> We do not sell, trade, or share your financial records with any third-party marketing networks or analytics entities.</li>
+        </ul>
+        <h3>3. Disconnection Rights</h3>
+        <p>You may disconnect your bank account or request full data deletion at any time by contacting our administrative desk at thurmanbrown085@gmail.com.</p>
+      </body>
+    </html>
+  `);
+});
