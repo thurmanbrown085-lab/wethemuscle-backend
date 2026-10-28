@@ -93,3 +93,9 @@ app.get('/check-stripe-balance', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Force Render Public Traffic Binding
+const PORT_LISTENER = process.env.PORT || 10000;
+app.listen(PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
