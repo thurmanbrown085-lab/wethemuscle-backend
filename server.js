@@ -99,3 +99,22 @@ const PORT_LISTENER = process.env.PORT || 10000;
 app.listen(PORT_LISTENER, () => {
   console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
 });
+
+// Live $1.00 Production Test Charge Endpoint
+app.get('/run-live-test-charge', async (req, res) => {
+  try {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    
+    // Create a safe $1.00 transaction request block
+    const charge = await stripe.charges.create({
+      amount: 100, // $1.00 in cents
+      currency: 'usd',
+      source: 'tok_visa', // Safe internal Stripe test token to verify live logic
+      description: 'Production integration pipeline test for WE THE MUSCLE LLC',
+    });
+    
+    res.json({ success: true, message: "Live logic verified!", chargeId: charge.id });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
