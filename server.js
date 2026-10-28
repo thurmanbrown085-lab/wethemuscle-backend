@@ -101,7 +101,36 @@ app.listen(PORT_LISTENER, () => {
 });
 
 // Live $1.00 Production Test Charge Endpoint
+// Approved Live ACH Bank Checkout Session Route
 app.get('/run-live-test-charge', async (req, res) => {
+  try {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    
+    // Create a live payment intent explicitly configured for your approved US Bank Account rails
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: 100, // $1.00 production test layout
+      currency: 'usd',
+      payment_method_types: ['us_bank_account'],
+      payment_method_options: {
+        us_bank_account: {
+          financial_connections: {
+            permissions: ['payment_method', 'balances', 'ownership', 'transactions'],
+          },
+        },
+      },
+      description: 'Approved Financial Connections Bank Integration - WE THE MUSCLE LLC',
+    });
+
+    res.json({ 
+      success: true, 
+      message: "Approved Bank Checkout Initialized!", 
+      clientSecret: paymentIntent.client_secret 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+app.get('/run-live-test-charge-old', async (req, res) => {
   try {
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     
