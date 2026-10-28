@@ -86,7 +86,7 @@ app.get('/privacy', (req, res) => {
 // Live Stripe Balance Verification Route Handler
 app.get('/check-stripe-balance', async (req, res) => {
   try {
-    const stripe = require('stripe')('_51S1ojLGrzhwvCQ6W7JlkLUgCzEo1zmOktn4mtCurCmU2rgD3NIW1f2pATCiw2aCIc2DYnssorudhwqzEsXtHFZTo00Jxgwnt9O');
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
     const balance = await stripe.balance.retrieve();
     res.json({ success: true, business: "WE THE MUSCLE LLC", data: balance });
   } catch (error) {
