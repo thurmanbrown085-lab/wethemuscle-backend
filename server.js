@@ -4,6 +4,80 @@ const app = express();
 
 app.use(express.json());
 
+// ==========================================
+// INTEGRATED STRIPE SETTLEMENT ROUTE
+// ==========================================
+app.post('/api/create-settlement-intent', async (req, res) => {
+    try {
+        const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+        const { amount, invoiceId, tx_type } = req.body;
+
+        let rawAmount = parseFloat(amount) || 0;
+        const transactionType = tx_type || "settlement";
+
+        if (transactionType === "debit" || transactionType === "reconciliation") {
+            console.log(`[RECONCILIATION] Aligning negative transaction outbound entry for Invoice: ${invoiceId}`);
+        }
+
+        const chargeCents = Math.round(Math.abs(rawAmount) * 100);
+
+        if (chargeCents === 0) {
+            return res.status(400).json({ success: false, error: "Invalid settlement threshold amount." });
+        }
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: chargeCents,
+            currency: 'usd',
+            payment_method_types: ['us_bank_account'],
+            payment_method_options: {
+                us_bank_account: {
+                    financial_connections: {
+                        permissions: ['payment_method', 'balances', 'ownership', 'transactions'],
+                    },
+                },
+            },
+            metadata: {
+                invoice_id: invoiceId,
+                reconciliation_type: transactionType,
+                company: 'WE THE MUSCLE LLC'
+            },
+            description: `Settlement Gateway Process - Invoice Ref: ${invoiceId}`
+        });
+
+        res.status(200).json({
+            success: true,
+            clientSecret: paymentIntent.client_secret,
+            transactionId: paymentIntent.id
+        });
+    } catch (error) {
+        console.error(`[SETTLEMENT ROUTE FAILED] ${error.message}`);
+        res.status(500).json({ success: false, error: 'Internal Server Settlement Error' });
+    }
+});
+
+// ==========================================
+// ASYNCHRONOUS WEBHOOK SIGNATURE VERIFIER
+// ==========================================
+app.post('/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    const sig = req.headers['stripe-signature'];
+    let event;
+
+    try {
+        event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+        console.error(`❌ Webhook Signature Verification Failed: ${err.message}`);
+        return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === 'payment_intent.succeeded') {
+        const paymentIntent = event.data.object;
+        console.log(`✅ [LEDGER UPDATED] Settlement for Invoice ${paymentIntent.metadata.invoice_id} successfully processed!`);
+    }
+
+    res.status(200).json({ received: true });
+});
+
 // Serves the front-end visual management dashboard interface
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
@@ -15,24 +89,21 @@ app.get('/api/transmissions/smartlink', (req, res) => {
         const { item_id, qty, amount, routing_matrix, transmission_id, tx_type } = req.query;
 
         if (!routing_matrix) {
-            return res.status(400).json({ 
-                status: "Rejected", 
-                message: "Missing required routing_matrix code parameter." 
+            return res.status(400).json({
+                status: "Rejected",
+                message: "Missing required routing_matrix code parameter."
             });
         }
 
-        // Adjust ledger calculation balance format based on negative push/debit reconciliation rules
         let calculatedAmount = parseInt(amount) || 0;
-        const transactionType = tx_type || "settlement"; // Defaults to settlement structure
+        const transactionType = tx_type || "settlement";
 
         if (transactionType === "debit" || transactionType === "reconciliation") {
-            // Forces negative transaction entry value to record outbound settlement push alignment
             calculatedAmount = -Math.abs(calculatedAmount);
         }
 
         console.log(`[SMARTLINK PAYLOAD RECEIVED] Type: ${transactionType}, Amount: ${calculatedAmount}, Routing Matrix: ${routing_matrix}`);
 
-        // Format data into standard transaction structure
         const normalizedPayload = {
             pipelineType: req.query.pipelineType || "Software",
             transmission_id: transmission_id || `TLK-${Date.now()}`,
@@ -42,18 +113,16 @@ app.get('/api/transmissions/smartlink', (req, res) => {
             data: { item_id, qty }
         };
 
-        res.status(200).json({ 
-            status: "Processed", 
+        res.status(200).json({
+            status: "Processed",
             message: "Payload successfully serialized and processed.",
-            transaction: normalizedPayload 
+            transaction: normalizedPayload
         });
     } catch (error) {
         console.error(`[SMARTLINK REJECTED] ${error.message}`);
         res.status(400).json({ status: "Rejected", message: error.message });
     }
 });
-
-app.listen(process.env.PORT || 10000, () => console.log('WTM Gateway API listening on port process.env.PORT || 10000'));
 
 // Stripe Compliance Verification Endpoint
 app.get('/privacy', (req, res) => {
@@ -94,21 +163,13 @@ app.get('/check-stripe-balance', async (req, res) => {
   }
 });
 
-// Force Render Public Traffic Binding
-const PORT_LISTENER = process.env.PORT || 10000;
-app.listen(PORT_LISTENER, () => {
-  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
-});
-
 // Live $1.00 Production Test Charge Endpoint
-// Approved Live ACH Bank Checkout Session Route
 app.get('/run-live-test-charge', async (req, res) => {
   try {
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    
-    // Create a live payment intent explicitly configured for your approved US Bank Account rails
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 100, // $1.00 production test layout
+      amount: 100, 
       currency: 'usd',
       payment_method_types: ['us_bank_account'],
       payment_method_options: {
@@ -121,31 +182,18 @@ app.get('/run-live-test-charge', async (req, res) => {
       description: 'Approved Financial Connections Bank Integration - WE THE MUSCLE LLC',
     });
 
-    res.json({ 
-      success: true, 
-      message: "Approved Bank Checkout Initialized!", 
-      clientSecret: paymentIntent.client_secret 
+    res.json({
+      success: true,
+      message: "Approved Bank Checkout Initialized!",
+      clientSecret: paymentIntent.client_secret
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.get('/run-live-test-charge-old', async (req, res) => {
-  try {
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    
-    // Create a safe $1.00 transaction request block
-    // Live-mode structural validation check without triggering unauthorized token fees
-    const accountDetails = await stripe.accounts.retrieve('me');
-    res.json({ 
-      success: true, 
-      message: "Production API pipeline completely verified for WE THE MUSCLE LLC!", 
-      livemode: accountDetails.details_submitted,
-      accountId: accountDetails.id 
-    });
-    
-    res.json({ success: true, message: "Live logic verified!", chargeId: charge.id });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+
+// Force Render Public Traffic Binding
+const PORT_LISTENER = process.env.PORT || 10000;
+app.listen(PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
 });
