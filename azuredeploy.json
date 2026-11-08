@@ -1,0 +1,22 @@
+{
+    "$schema": "https://azure.com",
+    "contentVersion": "1.0.0.0",
+    "resources": [
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-03-01",
+            "name": "wethemuscle-backend-2",
+            "location": "westus3",
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', 'ASP-WTMInfrastructure-a253')]",
+                "siteConfig": {
+                    "linuxFxVersion": "NODE|20-lts",
+                    "appSettings": [
+                        { "name": "PORT", "value": "10000" },
+                        { "name": "WEBSITE_RUN_FROM_PACKAGE", "value": "1" }
+                    ]
+                }
+            }
+        }
+    ]
+}
