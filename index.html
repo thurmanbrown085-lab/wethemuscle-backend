@@ -68,7 +68,7 @@
             const panel = document.getElementById('display-panel');
             panel.innerText = 'Initializing Stripe checkout...';
             try {
-                const response = await fetch('/create-checkout-session', { method: 'POST' });
+                const response = await fetch('/api/create-settlement-intent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 1.00, invoiceId: 'WTM-LIVE-' + Date.now(), tx_type: 'settlement' }) });
                 const data = await response.json();
                 panel.innerText = JSON.stringify(data, null, 2);
             } catch (error) { panel.innerText = 'Stripe connection failure: ' + error.message; }
@@ -76,23 +76,3 @@
     </script>
 </body>
 </html>
-<script>
-  const script = document.createElement("script");
-  script.src = "https://homedepot.com";script.async = true;
-  document.head.appendChild(script);
-
-  window.addEventListener("message", (event) => {
-    if (event.origin !== "https://www.homedepot.com") return;
-    const encryptedScript = event.data;
-    console.log("Received encrypted data safely:", encryptedScript);
-
-    fetch('/api/save-secure-data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secureData: encryptedScript })
-    })
-    .then(res => res.json())
-    .then(result => console.log("Saved to system:", result))
-    .catch(err => console.error("Error sending to backend:", err));
-  });
-</script> 
