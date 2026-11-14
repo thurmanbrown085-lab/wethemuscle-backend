@@ -5,7 +5,7 @@
  */
 async function processPaymentIntegration(transactionType, data) {
   // Hardcoded to your production container API endpoint path
-  const endpoint = 'https://onrender.com';
+  const endpoint = 'https://wethemuscleglobal.com';
 
   const transactionPayload = {
     source: data.source || 'ONLINE_CHECKOUT',
