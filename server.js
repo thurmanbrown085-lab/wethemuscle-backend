@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 
-app.use(express.json());
+app.use((req, res, next) => req.originalUrl === '/webhook' ? next() : express.json()(req, res, next));
 
 // ==========================================
 // INTEGRATED STRIPE SETTLEMENT ROUTE
