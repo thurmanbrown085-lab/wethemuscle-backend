@@ -194,6 +194,77 @@ app.get('/run-live-test-charge', async (req, res) => {
 
 // Force Render Public Traffic Binding
 const PORT_LISTENER = process.env.PORT || 10000;
+
+app.post('/api/ingest-terminal-payload', async (req, res) => {
+  try {
+    const incoming = req.body;
+      return res.status(400).json({ success: false, error: 'Invalid terminal payload structure.' });
+    }
+    const { orderDetails, entityProfile, financialBreakdown, event } = incoming;
+    const absGross = Math.abs(parseFloat(financialBreakdown.grossAmount) || 0);
+    const tHours = financialBreakdown.techHours !== undefined ? Math.max(0, parseFloat(financialBreakdown.techHours) || 0) : 1;
+    const mHours = financialBreakdown.managementHours !== undefined ? Math.max(0, parseFloat(financialBreakdown.managementHours) || 0) : 1;
+    const rail = financialBreakdown.paymentRail === 'ach' ? 'ach' : 'card';
+
+    const verifiedTechFee = +(tHours * 150.00).toFixed(2);
+    const verifiedMgmtFee = +(mHours * 100.00).toFixed(2);
+    const verifiedAdminFee = absGross > 0 ? 50.00 : 0;
+    const verifiedTransFee = absGross > 0 ? 1.50 : 0;
+    const verifiedStripeFee = absGross > 0
+      ? (rail === 'ach' ? +Math.min(absGross * 0.008, 5.00).toFixed(2) : +(absGross * 0.029 + 0.30).toFixed(2))
+      : 0;
+
+    const verifiedTotalFees = +(verifiedTechFee + verifiedMgmtFee + verifiedAdminFee + verifiedTransFee + verifiedStripeFee).toFixed(2);
+    const isNegative = financialBreakdown.reconciliationMode === 'NEGATIVE_RECONCILIATION' || financialBreakdown.grossAmount < 0;
+    const verifiedNet = +((isNegative ? -absGross : absGross) - verifiedTotalFees).toFixed(2);
+    const verifiedMemo = 'Tech: PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
+ + verifiedTechFee.toFixed(2) + ' (' + tHours + 'h) | Mgmt: PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
+ + verifiedMgmtFee.toFixed(2) + ' (' + mHours + 'h) | Admin: PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
+ + verifiedAdminFee.toFixed(2) + ' | Trans: PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
+ + verifiedTransFee.toFixed(2) + ' | Stripe: PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
+ + verifiedStripeFee.toFixed(2);
+
+    console.log('[INGESTION] PO#: ' + orderDetails.poNumber + ' | Project: ' + orderDetails.projectName + ' | Net: PORT_LISTENER, () => {
+  console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
+});
+ + verifiedNet + ' | ' + verifiedMemo);
+    res.status(200).json({
+      success: true,
+      ingestedAt: new Date().toISOString(),
+      terminalId: event?.terminalId || 'UNKNOWN',
+      poNumber: orderDetails.poNumber,
+      projectName: orderDetails.projectName,
+      entity: entityProfile?.company || 'WE THE MUSCLE LLC',
+      verifiedFinancials: {
+        grossAmount: isNegative ? -absGross : absGross,
+        techHours: tHours,
+        managementHours: mHours,
+        paymentRail: rail,
+        techFee: verifiedTechFee,
+        managementFee: verifiedMgmtFee,
+        administrationFee: verifiedAdminFee,
+        transmissionFee: verifiedTransFee,
+        stripeProcessingFee: verifiedStripeFee,
+        totalFees: verifiedTotalFees,
+        netSettlementAmount: verifiedNet,
+        feeMemo: verifiedMemo
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Software system ingestion failed.' });
+  }
+});
+
 app.listen(PORT_LISTENER, () => {
   console.log(`WE THE MUSCLE LLC Infrastructure Active on Port ${PORT_LISTENER}`);
 });
