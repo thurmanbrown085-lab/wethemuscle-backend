@@ -74,5 +74,110 @@
             } catch (error) { panel.innerText = 'Stripe connection failure: ' + error.message; }
         }
     </script>
+<section id="wtm-b2b-portal" style="margin-top:24px;padding:20px;border:1px solid #2b3545;border-radius:10px;background:#0f172a;color:#f8fafc;">
+  <h2 style="margin-top:0;">🏢 B2B Capital, Factoring &amp; Settlement Portal</h2>
+  <div style="margin-bottom:14px;">
+    <input id="wtmKeyInput" type="password" placeholder="Enter WTM_API_KEY to unlock live cloud sync" style="padding:8px;width:280px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#fff;" />
+    <button onclick="saveWtmKey()" style="padding:8px 14px;border-radius:6px;background:#2563eb;color:#fff;border:none;cursor:pointer;">Unlock Sync</button>
+    <button onclick="loadCloudLedger()" style="padding:8px 14px;border-radius:6px;background:#059669;color:#fff;border:none;cursor:pointer;">Refresh Ledger</button>
+    <button onclick="downloadCsv()" style="padding:8px 14px;border-radius:6px;background:#d97706;color:#fff;border:none;cursor:pointer;">⬇ Download CSV</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;">
+    <div style="padding:14px;border:1px solid #334155;border-radius:8px;background:#1e293b;">
+      <h3 style="margin-top:0;">📄 Invoice Financing / Factoring</h3>
+      <input id="fInv" placeholder="Invoice #" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="fPo" placeholder="PO #" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="fDebtor" placeholder="Account Debtor / Client" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="fAmt" type="number" step="0.01" placeholder="Invoice Face Value ($)" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="fAdv" type="number" value="80" placeholder="Advance Rate %" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <select id="fTerms" style="width:98%;margin-bottom:6px;padding:7px;">
+        <option value="0">Same Day (Net 0) - 1.0%</option>
+        <option value="15">Net 15 - 1.5%</option>
+        <option value="30" selected>Net 30 - 2.5%</option>
+        <option value="60">Net 60 - 4.0%</option>
+      </select>
+      <input id="fTh" type="number" value="1" placeholder="Tech Hours ($150/hr)" style="width:45%;margin-bottom:6px;padding:7px;" />
+      <input id="fMh" type="number" value="1" placeholder="Mgmt Hours ($100/hr)" style="width:45%;margin-bottom:6px;padding:7px;" />
+      <select id="fRail" style="width:98%;margin-bottom:8px;padding:7px;">
+        <option value="ach">ACH Rail (0.8% cap $5)</option>
+        <option value="card">Card Rail (2.9% + $0.30)</option>
+      </select>
+      <button onclick="submitFactoringForm()" style="width:98%;padding:10px;background:#3b82f6;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Submit Factored Invoice</button>
+    </div>
+    <div style="padding:14px;border:1px solid #334155;border-radius:8px;background:#1e293b;">
+      <h3 style="margin-top:0;">⚖️ PO Settlement / Reconciliation</h3>
+      <input id="sPo" placeholder="PO #" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="sProd" placeholder="Product / Service Description" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="sProj" value="PROJECT TAKEOFF" placeholder="Project Name" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <input id="sAmt" type="number" step="0.01" placeholder="Gross Amount ($)" style="width:94%;margin-bottom:6px;padding:7px;" />
+      <select id="sTx" style="width:98%;margin-bottom:6px;padding:7px;">
+        <option value="settlement">Settlement (Positive Inflow +)</option>
+        <option value="reconciliation">Reconciliation (Negative Outflow -)</option>
+      </select>
+      <select id="sTerms" style="width:98%;margin-bottom:6px;padding:7px;">
+        <option value="0">Same Day (Net 0)</option>
+        <option value="15">Net 15</option>
+        <option value="30">Net 30</option>
+        <option value="60">Net 60</option>
+      </select>
+      <input id="sTh" type="number" value="1" placeholder="Tech Hours ($150/hr)" style="width:45%;margin-bottom:6px;padding:7px;" />
+      <input id="sMh" type="number" value="1" placeholder="Mgmt Hours ($100/hr)" style="width:45%;margin-bottom:6px;padding:7px;" />
+      <select id="sRail" style="width:98%;margin-bottom:8px;padding:7px;">
+        <option value="ach">ACH Rail (0.8% cap $5)</option>
+        <option value="card">Card Rail (2.9% + $0.30)</option>
+      </select>
+      <button onclick="submitSettlementForm()" style="width:98%;padding:10px;background:#10b981;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Submit PO Entry</button>
+    </div>
+  </div>
+  <div style="margin-top:18px;overflow-x:auto;">
+    <h3>📊 Live Verified Cloud Ledger</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;text-align:left;">
+      <thead><tr style="border-bottom:1px solid #475569;"><th>Time</th><th>Type</th><th>Ref / PO</th><th>Client / Project</th><th>Terms</th><th>Gross</th><th>Fees</th><th>Net Capital</th></tr></thead>
+      <tbody id="ledgerRows"><tr><td colspan="8">Enter your wtm_... key above and click Refresh Ledger...</td></tr></tbody>
+    </table>
+  </div>
+</section>
+<script>
+function getWtmKey() { return localStorage.getItem("wtm_api_key") || document.getElementById("wtmKeyInput").value.trim(); }
+function saveWtmKey() { const k = document.getElementById("wtmKeyInput").value.trim(); if (k) { localStorage.setItem("wtm_api_key", k); loadCloudLedger(); } }
+async function submitFactoringForm() {
+  const panel = document.getElementById("display-panel");
+  const payload = {
+    event: { type: "WEB_PORTAL_FACTORING", terminalId: "WEB-WTM-001" },
+    entityProfile: { company: "WE THE MUSCLE LLC" },
+    factoringDetails: { invoiceNumber: document.getElementById("fInv").value, poNumber: document.getElementById("fPo").value, accountDebtor: document.getElementById("fDebtor").value, projectName: "PROJECT TAKEOFF" },
+    factoringBreakdown: { invoiceFaceValue: parseFloat(document.getElementById("fAmt").value) || 0, advancePercent: parseFloat(document.getElementById("fAdv").value) || 80, netTermsDays: parseInt(document.getElementById("fTerms").value, 10) || 0, paymentRail: document.getElementById("fRail").value, fees: { upfrontOperationalFees: (parseFloat(document.getElementById("fTh").value||0)*150) + (parseFloat(document.getElementById("fMh").value||0)*100) + 51.50 } }
+  };
+  const res = await fetch("/api/ingest-factoring-payload", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": getWtmKey() }, body: JSON.stringify(payload) });
+  const data = await res.json();
+  if (panel) panel.innerText = JSON.stringify(data, null, 2);
+  loadCloudLedger();
+}
+async function submitSettlementForm() {
+  const panel = document.getElementById("display-panel");
+  const tx = document.getElementById("sTx").value;
+  const rawAmt = Math.abs(parseFloat(document.getElementById("sAmt").value) || 0);
+  const payload = {
+    event: { type: "WEB_PORTAL_DISPATCH", terminalId: "WEB-WTM-001" },
+    entityProfile: { company: "WE THE MUSCLE LLC" },
+    orderDetails: { poNumber: document.getElementById("sPo").value, productOrContent: document.getElementById("sProd").value, projectName: document.getElementById("sProj").value },
+    financialBreakdown: { grossAmount: tx === "reconciliation" ? -rawAmt : rawAmt, reconciliationMode: tx === "reconciliation" ? "NEGATIVE_RECONCILIATION" : "STANDARD_SETTLEMENT", techHours: parseFloat(document.getElementById("sTh").value) || 0, managementHours: parseFloat(document.getElementById("sMh").value) || 0, paymentRail: document.getElementById("sRail").value, netTermsDays: parseInt(document.getElementById("sTerms").value, 10) || 0 }
+  };
+  const res = await fetch("/api/ingest-terminal-payload", { method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": getWtmKey() }, body: JSON.stringify(payload) });
+  const data = await res.json();
+  if (panel) panel.innerText = JSON.stringify(data, null, 2);
+  loadCloudLedger();
+}
+async function loadCloudLedger() {
+  const res = await fetch("/api/ledger", { headers: { "X-API-Key": getWtmKey() } });
+  const data = await res.json();
+  const tbody = document.getElementById("ledgerRows");
+  if (!data.success) { tbody.innerHTML = "<tr><td colspan=8>" + (data.error || "Unauthorized") + "</td></tr>"; return; }
+  tbody.innerHTML = data.records.map(r => "<tr style=border-bottom:1px solid #1e293b><td>" + r.ingestedAt.slice(0,16) + "</td><td>" + r.category + "</td><td>" + r.reference + " / " + r.poNumber + "</td><td>" + r.party + "</td><td>" + r.terms + "</td><td>$" + Number(r.grossAmount).toFixed(2) + "</td><td>$" + Number(r.totalFees).toFixed(2) + "</td><td><b>$" + Number(r.netCapital).toFixed(2) + "</b></td></tr>").join("") || "<tr><td colspan=8>No records yet.</td></tr>";
+}
+function downloadCsv() { window.location.href = "/api/export-csv?key=" + encodeURIComponent(getWtmKey()); }
+window.addEventListener("DOMContentLoaded", () => { const saved = localStorage.getItem("wtm_api_key"); if (saved) { document.getElementById("wtmKeyInput").value = saved; loadCloudLedger(); } });
+</script>
+
 </body>
 </html>

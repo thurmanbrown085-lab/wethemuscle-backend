@@ -196,7 +196,44 @@ app.get('/run-live-test-charge', async (req, res) => {
 const PORT_LISTENER = process.env.PORT || 10000;
 
 
+const LEDGER_FILE = require("path").join(__dirname, "cloud_ledger.json");
+function verifyApiKey(req, res) {
+  const expected = process.env["WTM_API_KEY"];
+  if (!expected) return true;
+  const provided = req.headers["x-api-key"] || req.query.key;
+  if (provided !== expected) {
+    res.status(401).json({ success: false, error: "Unauthorized: Invalid WTM_API_KEY." });
+    return false;
+  }
+  return true;
+}
+function saveToCloudLedger(entry) {
+  let list = [];
+  if (fs.existsSync(LEDGER_FILE)) { try { list = JSON.parse(fs.readFileSync(LEDGER_FILE, "utf8")); } catch (e) {} }
+  list.unshift(entry);
+  fs.writeFileSync(LEDGER_FILE, JSON.stringify(list, null, 2));
+}
+app.get("/api/ledger", (req, res) => {
+  if (!verifyApiKey(req, res)) return;
+  let list = [];
+  if (fs.existsSync(LEDGER_FILE)) { try { list = JSON.parse(fs.readFileSync(LEDGER_FILE, "utf8")); } catch (e) {} }
+  res.json({ success: true, count: list.length, records: list });
+});
+app.get("/api/export-csv", (req, res) => {
+  if (!verifyApiKey(req, res)) return;
+  let list = [];
+  if (fs.existsSync(LEDGER_FILE)) { try { list = JSON.parse(fs.readFileSync(LEDGER_FILE, "utf8")); } catch (e) {} }
+  const rows = ["Timestamp,Category,Reference,PO_Number,Project_Or_Debtor,Terms,Gross_Or_Face_Value,Total_Fees,Net_Capital_Realized"];
+  list.forEach(r => {
+    rows.push([r.ingestedAt, r.category, r.reference, r.poNumber, "\"" + (r.party || "") + "\"", "\"" + (r.terms || "") + "\"", r.grossAmount, r.totalFees, r.netCapital].join(","));
+  });
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", "attachment; filename=WTM_Ledger_Export.csv");
+  res.send(rows.join("\n"));
+});
+
 app.post("/api/ingest-terminal-payload", async (req, res) => {
+  if (!verifyApiKey(req, res)) return;
   try {
     const incoming = req.body;
     if (!incoming || !incoming.orderDetails || !incoming.financialBreakdown) {
@@ -223,12 +260,14 @@ app.post("/api/ingest-terminal-payload", async (req, res) => {
     const isNegative = financialBreakdown.reconciliationMode === "NEGATIVE_RECONCILIATION" || String(financialBreakdown.grossAmount).startsWith("-");
     const verifiedNet = +((isNegative ? -absGross : absGross) - verifiedTotalFees).toFixed(2);
     const verifiedMemo = "Terms: " + termsLabel + " (Due " + settlementDueDate + ") | Tech: $" + verifiedTechFee.toFixed(2) + " (" + tHours + "h) | Mgmt: $" + verifiedMgmtFee.toFixed(2) + " (" + mHours + "h) | Admin: $" + verifiedAdminFee.toFixed(2) + " | Trans: $" + verifiedTransFee.toFixed(2) + " | Stripe: $" + verifiedStripeFee.toFixed(2);
+    saveToCloudLedger({ ingestedAt: new Date().toISOString(), category: "PO_SETTLEMENT", reference: orderDetails.poNumber, poNumber: orderDetails.poNumber, party: orderDetails.projectName, terms: termsLabel, grossAmount: isNegative ? -absGross : absGross, totalFees: verifiedTotalFees, netCapital: verifiedNet });
     console.log("[INGESTION] PO#: " + orderDetails.poNumber + " | Project: " + orderDetails.projectName + " | Net: $" + verifiedNet + " | " + verifiedMemo);
     res.status(200).json({ success: true, ingestedAt: new Date().toISOString(), terminalId: event?.terminalId || "UNKNOWN", poNumber: orderDetails.poNumber, projectName: orderDetails.projectName, entity: entityProfile?.company || "WE THE MUSCLE LLC", verifiedFinancials: { grossAmount: isNegative ? -absGross : absGross, techHours: tHours, managementHours: mHours, paymentRail: rail, netTermsDays: termsDays, netTermsLabel: termsLabel, settlementDueDate: settlementDueDate, techFee: verifiedTechFee, managementFee: verifiedMgmtFee, administrationFee: verifiedAdminFee, transmissionFee: verifiedTransFee, stripeProcessingFee: verifiedStripeFee, totalFees: verifiedTotalFees, netSettlementAmount: verifiedNet, feeMemo: verifiedMemo } });
   } catch (err) { res.status(500).json({ success: false, error: "Ingestion failed." }); }
 });
 
 app.post("/api/ingest-factoring-payload", async (req, res) => {
+  if (!verifyApiKey(req, res)) return;
   try {
     const inc = req.body;
     if (!inc || !inc.factoringDetails || !inc.factoringBreakdown) {
@@ -249,6 +288,8 @@ app.post("/api/ingest-factoring-payload", async (req, res) => {
     const upfrontOps = parseFloat(factoringBreakdown.fees?.upfrontOperationalFees) || 0;
     const netAdvanceToday = +(grossAdvance - upfrontOps).toFixed(2);
     const netReserveAtMaturity = +(reserveHoldback - factoringDiscountFee).toFixed(2);
+    const netCap = +(netAdvanceToday + netReserveAtMaturity).toFixed(2);
+    saveToCloudLedger({ ingestedAt: new Date().toISOString(), category: "INVOICE_FACTORING", reference: factoringDetails.invoiceNumber, poNumber: factoringDetails.poNumber, party: factoringDetails.accountDebtor, terms: termsLabel, grossAmount: faceValue, totalFees: +(upfrontOps + factoringDiscountFee).toFixed(2), netCapital: netCap });
     res.status(200).json({
       success: true,
       ingestedAt: new Date().toISOString(),
