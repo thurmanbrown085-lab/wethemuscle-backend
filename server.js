@@ -228,4 +228,53 @@ app.post("/api/ingest-terminal-payload", async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, error: "Ingestion failed." }); }
 });
 
+app.post("/api/ingest-factoring-payload", async (req, res) => {
+  try {
+    const inc = req.body;
+    if (!inc || !inc.factoringDetails || !inc.factoringBreakdown) {
+      return res.status(400).json({ success: false, error: "Invalid factoring payload structure." });
+    }
+    const { factoringDetails, entityProfile, factoringBreakdown, event } = inc;
+    const faceValue = Math.abs(parseFloat(factoringBreakdown.invoiceFaceValue) || 0);
+    const advPct = Math.min(100, Math.max(1, parseFloat(factoringBreakdown.advancePercent) || 80));
+    const resPct = +(100 - advPct).toFixed(2);
+    const termsDays = new Array(0, 15, 30, 60).includes(Number(factoringBreakdown.netTermsDays)) ? Number(factoringBreakdown.netTermsDays) : 30;
+    const termsLabel = termsDays === 0 ? "Same Day (Net 0)" : "Net " + termsDays;
+    const maturityDate = new Date(Date.now() + termsDays * 86400000).toISOString().split("T").shift();
+    const rateMap = { 0: 0.01, 15: 0.015, 30: 0.025, 60: 0.04 };
+    const discountRate = rateMap[termsDays] || 0.025;
+    const grossAdvance = +(faceValue * (advPct / 100)).toFixed(2);
+    const reserveHoldback = +(faceValue - grossAdvance).toFixed(2);
+    const factoringDiscountFee = +(faceValue * discountRate).toFixed(2);
+    const upfrontOps = parseFloat(factoringBreakdown.fees?.upfrontOperationalFees) || 0;
+    const netAdvanceToday = +(grossAdvance - upfrontOps).toFixed(2);
+    const netReserveAtMaturity = +(reserveHoldback - factoringDiscountFee).toFixed(2);
+    res.status(200).json({
+      success: true,
+      ingestedAt: new Date().toISOString(),
+      terminalId: event?.terminalId || "UNKNOWN",
+      invoiceNumber: factoringDetails.invoiceNumber,
+      poNumber: factoringDetails.poNumber,
+      accountDebtor: factoringDetails.accountDebtor,
+      entity: entityProfile?.company || "WE THE MUSCLE LLC",
+      verifiedFactoringSchedule: {
+        invoiceFaceValue: faceValue,
+        advancePercent: advPct,
+        reservePercent: resPct,
+        netTermsLabel: termsLabel,
+        maturityDate: maturityDate,
+        grossAdvanceAmount: grossAdvance,
+        reserveHoldbackAmount: reserveHoldback,
+        factoringDiscountFee: factoringDiscountFee,
+        upfrontOperationalFees: upfrontOps,
+        netAdvanceDisbursedToday: netAdvanceToday,
+        netReserveReleaseAtMaturity: netReserveAtMaturity,
+        totalNetCapitalRealized: +(netAdvanceToday + netReserveAtMaturity).toFixed(2)
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: "Factoring ingestion failed." });
+  }
+});
+
 app.listen(PORT_LISTENER, () => { console.log("WE THE MUSCLE LLC Active on Port " + PORT_LISTENER); });
