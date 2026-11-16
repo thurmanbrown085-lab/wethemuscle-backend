@@ -207,6 +207,9 @@ app.post("/api/ingest-terminal-payload", async (req, res) => {
     const tHours = financialBreakdown.techHours !== undefined ? Math.max(0, parseFloat(financialBreakdown.techHours) || 0) : 1;
     const mHours = financialBreakdown.managementHours !== undefined ? Math.max(0, parseFloat(financialBreakdown.managementHours) || 0) : 1;
     const rail = financialBreakdown.paymentRail === "ach" ? "ach" : "card";
+    const termsDays = new Array(0, 15, 30, 60).includes(Number(financialBreakdown.netTermsDays)) ? Number(financialBreakdown.netTermsDays) : 0;
+    const termsLabel = termsDays === 0 ? "Same Day (Net 0)" : "Net " + termsDays;
+    const settlementDueDate = new Date(Date.now() + termsDays * 86400000).toISOString().split("T").shift();
 
     const verifiedTechFee = +(tHours * 150.00).toFixed(2);
     const verifiedMgmtFee = +(mHours * 100.00).toFixed(2);
@@ -219,9 +222,9 @@ app.post("/api/ingest-terminal-payload", async (req, res) => {
     const verifiedTotalFees = +(verifiedTechFee + verifiedMgmtFee + verifiedAdminFee + verifiedTransFee + verifiedStripeFee).toFixed(2);
     const isNegative = financialBreakdown.reconciliationMode === "NEGATIVE_RECONCILIATION" || String(financialBreakdown.grossAmount).startsWith("-");
     const verifiedNet = +((isNegative ? -absGross : absGross) - verifiedTotalFees).toFixed(2);
-    const verifiedMemo = "Tech: $" + verifiedTechFee.toFixed(2) + " (" + tHours + "h) | Mgmt: $" + verifiedMgmtFee.toFixed(2) + " (" + mHours + "h) | Admin: $" + verifiedAdminFee.toFixed(2) + " | Trans: $" + verifiedTransFee.toFixed(2) + " | Stripe: $" + verifiedStripeFee.toFixed(2);
+    const verifiedMemo = "Terms: " + termsLabel + " (Due " + settlementDueDate + ") | Tech: $" + verifiedTechFee.toFixed(2) + " (" + tHours + "h) | Mgmt: $" + verifiedMgmtFee.toFixed(2) + " (" + mHours + "h) | Admin: $" + verifiedAdminFee.toFixed(2) + " | Trans: $" + verifiedTransFee.toFixed(2) + " | Stripe: $" + verifiedStripeFee.toFixed(2);
     console.log("[INGESTION] PO#: " + orderDetails.poNumber + " | Project: " + orderDetails.projectName + " | Net: $" + verifiedNet + " | " + verifiedMemo);
-    res.status(200).json({ success: true, ingestedAt: new Date().toISOString(), terminalId: event?.terminalId || "UNKNOWN", poNumber: orderDetails.poNumber, projectName: orderDetails.projectName, entity: entityProfile?.company || "WE THE MUSCLE LLC", verifiedFinancials: { grossAmount: isNegative ? -absGross : absGross, techHours: tHours, managementHours: mHours, paymentRail: rail, techFee: verifiedTechFee, managementFee: verifiedMgmtFee, administrationFee: verifiedAdminFee, transmissionFee: verifiedTransFee, stripeProcessingFee: verifiedStripeFee, totalFees: verifiedTotalFees, netSettlementAmount: verifiedNet, feeMemo: verifiedMemo } });
+    res.status(200).json({ success: true, ingestedAt: new Date().toISOString(), terminalId: event?.terminalId || "UNKNOWN", poNumber: orderDetails.poNumber, projectName: orderDetails.projectName, entity: entityProfile?.company || "WE THE MUSCLE LLC", verifiedFinancials: { grossAmount: isNegative ? -absGross : absGross, techHours: tHours, managementHours: mHours, paymentRail: rail, netTermsDays: termsDays, netTermsLabel: termsLabel, settlementDueDate: settlementDueDate, techFee: verifiedTechFee, managementFee: verifiedMgmtFee, administrationFee: verifiedAdminFee, transmissionFee: verifiedTransFee, stripeProcessingFee: verifiedStripeFee, totalFees: verifiedTotalFees, netSettlementAmount: verifiedNet, feeMemo: verifiedMemo } });
   } catch (err) { res.status(500).json({ success: false, error: "Ingestion failed." }); }
 });
 
