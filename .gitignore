@@ -1,2 +1,6 @@
 .private_vault/
 .env
+
+terminal_dispatch.js
+terminal_ledger_records.json
+incoming_terminal_event.json
