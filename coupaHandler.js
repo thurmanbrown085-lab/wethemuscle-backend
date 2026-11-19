@@ -11,7 +11,7 @@ async function getApiToken(){
 }
 
 async function runCoupaSync(){
-  console.log(`[$(new Date().toISO()}] Running 15-min Coupa sync...`);
+  console.log(`[$(new Date().toISOString()}] Running 15-min Coupa sync...`);
   if(!process.env.COUPA_INSTANCE_URL)return new Response(JSON.stringify({status:"Skipped",reason:"Awaiting Coupa credentials"}),{status:200,headers:{"Content-Type":"application/json"}});
   const token=await getApiToken();
   for(let i=0;i<=3;i++){
@@ -37,8 +37,8 @@ async function handleWebRequest(request){
     const sec=process.env.COUPA_WEBHOOK_SECRET,anySig=request.headers.get("x-coupa-signature")||request.headers.get("x-webhook-secret");
     if(sec&&anySig!==sec)return new Response(JSON.stringify({status:"Unauthorized"}),{status:401,headers:{"Content-Type":"application/json"}});
     const body=await request.text();
-    console.log(`[$(new Date().toISO()}] Coupa Webhook:`,body.slice(0,500));
-    return new Response(JSON.stringify({status:"Received",timestamp:new Date().toISO()}),{status:200,headers:{"Content-Type":"application/json"}});
+    console.log(`[$(new Date().toISOString()}] Coupa Webhook:`,body.slice(0,500));
+    return new Response(JSON.stringify({status:"Received",timestamp:new Date().toISOString()}),{status:200,headers:{"Content-Type":"application/json"}});
   }
   if(url.pathname==="/api/cron/coupa-sync"&&request.method==="POST"){
     const cs=process.env.CRON_SECRET;if(cs&&request.headers.get("x-cron-secret")!==cs)return new Response(JSON.stringify({status:"Unauthorized"}),{status:401,headers:{"Content-Type":"application/json"}});
