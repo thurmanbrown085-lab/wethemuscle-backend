@@ -73,7 +73,8 @@
                 panel.innerText = JSON.stringify(data, null, 2);
             } catch (error) { panel.innerText = 'Stripe connection failure: ' + error.message; }
         }
-    </script>
+    async function uploadSkuPhoto(el){if(!el.files||!el.files[0])return;const panel=document.getElementById("display-panel");if(panel)panel.innerText="Scanning SKU / QR image...";const fd=new FormData();fd.append("photo",el.files[0]);const res=await fetch("/api/scan-sku",{method:"POST",headers:{"X-API-Key":getWtmKey()},body:fd});const data=await res.json();if(panel)panel.innerText=JSON.stringify(data,null,2);el.value="";loadCloudLedger();}
+</script>
 <section id="wtm-b2b-portal" style="margin-top:24px;padding:20px;border:1px solid #2b3545;border-radius:10px;background:#0f172a;color:#f8fafc;">
   <h2 style="margin-top:0;">🏢 B2B Capital, Factoring &amp; Settlement Portal</h2>
   <div style="margin-bottom:14px;">
@@ -81,6 +82,7 @@
     <button onclick="saveWtmKey()" style="padding:8px 14px;border-radius:6px;background:#2563eb;color:#fff;border:none;cursor:pointer;">Unlock Sync</button>
     <button onclick="loadCloudLedger()" style="padding:8px 14px;border-radius:6px;background:#059669;color:#fff;border:none;cursor:pointer;">Refresh Ledger</button>
     <button onclick="downloadCsv()" style="padding:8px 14px;border-radius:6px;background:#d97706;color:#fff;border:none;cursor:pointer;">⬇ Download CSV</button>
+    <input id="scanSkuInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="uploadSkuPhoto(this)" /><button onclick="document.getElementById('scanSkuInput').click()" style="padding:8px 14px;border-radius:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;">📷 Scan SKU / QR</button>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;">
     <div style="padding:14px;border:1px solid #334155;border-radius:8px;background:#1e293b;">
