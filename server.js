@@ -6,7 +6,7 @@ const server=http.createServer(async(req,res)=>{
   try{
     const chunks=[];for await(const c of req)chunks.push(c);
     const body=Buffer.concat(chunks);
-    const url=`http://${req.headers.host||'ilocalhost'}${req.url}`;
+    const url=`http://${req.headers.host||'localhost'}${req.url}`;
     const webReq=new Request(url,{method:req.method,headers:req.headers,body:req.method==="GET"||req.method==="HEAD"?undefined:body});
     const webRes=await handleWebRequest(webReq);
     res.writeHead(webRes.status,Object.fromEntries(webRes.headers));
