@@ -11,3 +11,7 @@ factoring_ledger_records.json
 .wtm_api_key
 cloud_ledger.json
 *.csv
+
+downloads/
+eng.traineddata
+*.bak
