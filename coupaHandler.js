@@ -1,3 +1,4 @@
+function xmlTag(x, re) { const m = x.match(re); return m && m.length > 1 ? m.pop() : ""; }
 const crypto = require('crypto');
 const KEY = crypto.createHash('sha256').update(process.env.TOKEN_ENCRYPTION_KEY || process.env.COUPA_WEBHOOK_SECRET || 'wtm-key').digest();
 let encToken = null, tokenExpiry = 0;
@@ -45,21 +46,21 @@ async function handleWebRequest(req) {
     setIdempotency(ik || txId, out); return new Response(JSON.stringify(out), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   if (url.pathname === '/api/webhooks/coupa' && req.method === 'POST') {
-    const raw = await req.text(), isXml = raw.trim().startsWith('<'), xmlSec = (raw.match(/<SharedSecret>([^<]+)<\/SharedSecret>/i) || [])[1];
-    const sec = process.env.COUPA_WEBHOOK_SECRET, sig = req.headers.get('x-coupa-signature') || req.headers.get('x-webhook-secret') || xmlSec;
-    if (sec && sig !== sec) return new Response(JSON.stringify({ status: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
-    const ik = req.headers.get('x-idempotency-key') || (raw.match(/payloadID="([^"]+)"/i) || [])[1] || crypto.createHash('sha256').update(raw).digest('hex'), c = checkIdempotency(ik);
-    if (c) return isXml ? new Response(`<?xml version="1.0" encoding="UTF-8"?><cXML payloadID="${ik}" timestamp="${new Date().toISOString()}"><Response><Status code="200" text="OK">Idempotent Replay</Status></Response></cXML>`, { status: 200, headers: { 'Content-Type': 'application/xml' } }) : new Response(JSON.stringify({ ...c, idempotentReplay: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    const raw = await req.text(), isXml = raw.trim().startsWith("<"), xmlSec = xmlTag(raw, /<SharedSecret>([^<]+)<\/SharedSecret>/i);
+    const sec = process.env.COUPA_WEBHOOK_SECRET, sig = req.headers.get("x-coupa-signature") || req.headers.get("x-webhook-secret") || xmlSec;
+    if (sec && sig !== sec) return new Response(JSON.stringify({ status: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    const ik = req.headers.get("x-idempotency-key") || xmlTag(raw, /payloadID="([^"]+)"/i) || crypto.createHash("sha256").update(raw).digest("hex"), c = checkIdempotency(ik);
+    if (c) return isXml ? new Response(`<?xml version="1.0" encoding="UTF-8"?><cXML payloadID="${ik}" timestamp="${new Date().toISOString()}"><Response><Status code="200" text="OK">Idempotent Replay</Status></Response></cXML>`, { status: 200, headers: { "Content-Type": "application/xml" } }) : new Response(JSON.stringify({ ...c, idempotentReplay: true }), { status: 200, headers: { "Content-Type": "application/json" } });
     let p = {};
     if (isXml) {
-      const oid = (raw.match(/orderID="([^"]+)"/i) || raw.match(/invoiceID="([^"]+)"/i) || [])[1], sku = (raw.match(/<SupplierPartID>([^<]+)<\/SupplierPartID>/i) || [])[1], qty = (raw.match(/quantity="([^"]+)"/i) || [])[1], amt = (raw.match(/<Money[^>]*>([0-9.,]+)<\/Money>/i) || [])[1];
-      p = { id: oid || ik, item_id: sku || oid || 'coupa-cxml', qty: parseFloat(qty) || 1, amount: parseFloat((amt || '0').replace(/,/g, '')) || 0, routing_matrix: 'COUPA_CXML_ORDER' };
+      const oid = xmlTag(raw, /orderID="([^"]+)"/i) || xmlTag(raw, /invoiceID="([^"]+)"/i), sku = xmlTag(raw, /<SupplierPartID>([^<]+)<\/SupplierPartID>/i), qty = xmlTag(raw, /quantity="([^"]+)"/i), amt = xmlTag(raw, /<Money[^>]*>([0-9.,]+)<\/Money>/i);
+      p = { id: oid || ik, item_id: sku || oid || "coupa-cxml", qty: parseFloat(qty) || 1, amount: parseFloat((amt || "0").replace(/,/g, "")) || 0, routing_matrix: "COUPA_CXML_ORDER" };
     } else { try { p = JSON.parse(raw); } catch { p = { rawXml: raw.slice(0, 200) }; } }
-    const oltp = await commitOltpTransaction({ idemKey: ik, txId: String(p.id || p.order_id || ik), itemId: String(p.event || p.item_id || 'coupa-payload'), qty: Number(p.qty || 1), amount: Number(p.amount || p.total || 0), routingMatrix: p.routing_matrix || 'COUPA_AUTO_ORDER', source: isXml ? 'coupa-cxml' : 'coupa-webhook' });
-    const resObj = { status: 'Processed', format: isXml ? 'cXML' : 'JSON', parsed: p, idempotencyKey: ik, oltp, timestamp: new Date().toISOString() };
+    const oltp = await commitOltpTransaction({ idemKey: ik, txId: String(p.id || p.order_id || ik), itemId: String(p.event || p.item_id || "coupa-payload"), qty: Number(p.qty || 1), amount: Number(p.amount || p.total || 0), routingMatrix: p.routing_matrix || "COUPA_AUTO_ORDER", source: isXml ? "coupa-cxml" : "coupa-webhook" });
+    const resObj = { status: "Processed", format: isXml ? "cXML" : "JSON", parsed: p, idempotencyKey: ik, oltp, timestamp: new Date().toISOString() };
     setIdempotency(ik, resObj);
-    if (isXml) return new Response(`<?xml version="1.0" encoding="UTF-8"?><cXML payloadID="${ik}" timestamp="${new Date().toISOString()}"><Response><Status code="200" text="OK"/></Response></cXML>`, { status: 200, headers: { 'Content-Type': 'application/xml' } });
-    return new Response(JSON.stringify(resObj), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (isXml) return new Response(`<?xml version="1.0" encoding="UTF-8"?><cXML payloadID="${ik}" timestamp="${new Date().toISOString()}"><Response><Status code="200" text="OK"/></Response></cXML>`, { status: 200, headers: { "Content-Type": "application/xml" } });
+    return new Response(JSON.stringify(resObj), { status: 200, headers: { "Content-Type": "application/json" } });
   }
   if (url.pathname === '/api/cron/coupa-sync' && req.method === 'POST') {
     const cs = process.env.CRON_SECRET;
